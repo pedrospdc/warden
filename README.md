@@ -1,55 +1,26 @@
 # Warden
 
-Windows system-tray app that optimizes your PC for gaming by stopping heavy background processes and services with one click.
+Windows system-tray app that kills background processes and stops services when you game, then restores everything when you're done.
 
 ## What it does
 
-- Kills configured background processes (Sonarr, Radarr, Jellyfin, Docker, etc.)
-- Stops Windows services (Windows Search, Windows Update, SysMain, DiagTrack, WSL, etc.)
-- Shuts down WSL
-- Switches the power plan to High Performance
-
-Disabling gaming mode reverses all of the above (restores services, switches back to Balanced power plan).
+- **Enable** — kills configured processes, stops Windows services, shuts down WSL, switches to High Performance power plan
+- **Disable** — starts services back up, returns to Balanced power plan
+- **Tray-first** — left-click the icon to open the portal, right-click for the menu
+- **Manage Services** — toggle, add, edit, or delete entries from the UI; fuzzy-search picker auto-fills from your live Windows service list
 
 ## Usage
 
-Download `warden.exe` from [Releases](../../releases) and run it. Warden lives in the system tray — right-click the icon to toggle gaming mode or open the Portal.
+Download `warden.exe` from [Releases](../../releases) and run it. No installer needed — configuration is saved to `config.json` next to the binary.
 
-The Portal window shows the current state of all managed services and provides quick-access links to your local *arr apps.
-
-## Configuration
-
-`config.json` is created next to the binary on first save. Edit it to add or remove processes, services, and hotlinks.
-
-```json
-{
-  "gaming_mode": false,
-  "processes": [
-    { "name": "Sonarr", "exes": ["Sonarr.exe"], "enabled": true }
-  ],
-  "services": [
-    { "name": "Windows Search", "id": "WSearch", "enabled": true }
-  ],
-  "hotlinks": [
-    { "name": "Sonarr", "url": "http://localhost:8989", "icon": "📺" }
-  ]
-}
-```
+Default managed items: Sonarr, Radarr, Prowlarr, Jellyfin, Deluge, Docker Desktop (processes) and Windows Search, SysMain, Windows Update, DiagTrack, OneDrive Sync, Docker Service, WSL (services).
 
 ## Building
 
 Requires Go 1.24+ and [mingw-w64](https://www.mingw-w64.org/) for cross-compilation from Linux/WSL.
 
 ```bash
-# Windows binary (from WSL/Linux)
-make build-windows
-
-# Run tests
+make build-windows   # produces warden.exe
+make deploy          # build + copy to %USERPROFILE%\Documents
 make test
-```
-
-Native Windows build:
-
-```bash
-go build -ldflags="-H windowsgui" -o warden.exe .
 ```

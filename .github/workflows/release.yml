@@ -8,7 +8,7 @@ on:
 jobs:
   release:
     name: Build and Release
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
@@ -19,18 +19,26 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Install build dependencies
+        run: sudo apt-get install -y gcc-mingw-w64-x86-64 msitools
+
       - name: Download modules
         run: go mod download
 
       - name: Build Windows binary
-        run: go build -ldflags="-H windowsgui" -o warden.exe .
+        run: |
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc \
+            go build -ldflags="-H windowsgui" -o warden.exe .
 
       - name: Generate version tag
         id: version
-        shell: bash
         run: |
           base=$(cat VERSION)
           echo "tag=v${base}.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          echo "msi_version=${base}.0.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build MSI installer
+        run: wixl -D Version=${{ steps.version.outputs.msi_version }} -a x64 -o warden.msi installer/warden.wxs
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -38,4 +46,6 @@ jobs:
           tag_name: ${{ steps.version.outputs.tag }}
           name: Release ${{ steps.version.outputs.tag }}
           generate_release_notes: true
-          files: warden.exe
+          files: |
+            warden.exe
+            warden.msi

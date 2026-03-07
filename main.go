@@ -51,13 +51,15 @@ func main() {
 
 	// ── Build tray menu ───────────────────────────────────────────────────────
 	var (
-		statusItem *fyne.MenuItem
-		toggleItem *fyne.MenuItem
-		portalItem *fyne.MenuItem
-		quitItem   *fyne.MenuItem
+		statusItem  *fyne.MenuItem
+		toggleItem  *fyne.MenuItem
+		startupItem *fyne.MenuItem
+		portalItem  *fyne.MenuItem
+		quitItem    *fyne.MenuItem
+		buildMenu   func() *fyne.Menu
 	)
 
-	buildMenu := func() *fyne.Menu {
+	buildMenu = func() *fyne.Menu {
 		if gm.IsEnabled() {
 			statusItem = fyne.NewMenuItem("🎮 Gaming Mode: ON", nil)
 			toggleItem = fyne.NewMenuItem("Disable Gaming Mode", func() {
@@ -77,6 +79,18 @@ func main() {
 		}
 		statusItem.Disabled = true
 
+		if isStartupEnabled() {
+			startupItem = fyne.NewMenuItem("✓ Start with Windows", func() {
+				_ = setStartupEnabled(false)
+				desk.SetSystemTrayMenu(buildMenu())
+			})
+		} else {
+			startupItem = fyne.NewMenuItem("  Start with Windows", func() {
+				_ = setStartupEnabled(true)
+				desk.SetSystemTrayMenu(buildMenu())
+			})
+		}
+
 		portalItem = fyne.NewMenuItem("Open Portal…", func() {
 			pw.win.Show()
 		})
@@ -88,6 +102,8 @@ func main() {
 			statusItem,
 			fyne.NewMenuItemSeparator(),
 			toggleItem,
+			fyne.NewMenuItemSeparator(),
+			startupItem,
 			fyne.NewMenuItemSeparator(),
 			portalItem,
 			fyne.NewMenuItemSeparator(),

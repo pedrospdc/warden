@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*"
+           Name="Warden"
+           Language="1033"
+           Version="$(var.Version)"
+           Manufacturer="pedrospdc"
+           UpgradeCode="{01051326-48CA-412B-B439-21EA7B466DE7}">
+
+    <Package InstallerVersion="301" Compressed="yes" InstallScope="perMachine" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Warden is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFilesFolder">
+        <Directory Id="INSTALLFOLDER" Name="Warden">
+
+          <!-- Main executable -->
+          <Component Id="WardenExe" Guid="*">
+            <File Id="WardenExeFile" Name="warden.exe" Source="../warden.exe" KeyPath="yes" />
+          </Component>
+
+          <!-- Startup registry entry (optional feature) -->
+          <Component Id="StartupComponent" Guid="*">
+            <RegistryValue Root="HKCU"
+                           Key="Software\Microsoft\Windows\CurrentVersion\Run"
+                           Name="Warden"
+                           Value='"[INSTALLFOLDER]warden.exe"'
+                           Type="string"
+                           KeyPath="yes" />
+          </Component>
+
+        </Directory>
+      </Directory>
+
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="AppMenuFolder" Name="Warden">
+
+          <!-- Start Menu shortcut -->
+          <Component Id="StartMenuShortcut" Guid="*">
+            <Shortcut Id="AppStartMenuShortcut" Name="Warden"
+                      Target="[INSTALLFOLDER]warden.exe"
+                      WorkingDirectory="INSTALLFOLDER" />
+            <RemoveFolder Id="RemoveAppMenuFolder" On="uninstall" />
+            <RegistryValue Root="HKCU" Key="Software\pedrospdc\Warden"
+                           Name="installed" Type="integer" Value="1" KeyPath="yes" />
+          </Component>
+
+        </Directory>
+      </Directory>
+    </Directory>
+
+    <!-- Core application – required -->
+    <Feature Id="MainFeature" Title="Warden" Level="1"
+             AllowAdvertise="no" Absent="disallow">
+      <ComponentRef Id="WardenExe" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+
+    <!-- Start with Windows – on by default, toggle via tray after install -->
+    <Feature Id="StartupFeature" Title="Start with Windows" Level="1"
+             AllowAdvertise="no">
+      <ComponentRef Id="StartupComponent" />
+    </Feature>
+
+  </Product>
+</Wix>

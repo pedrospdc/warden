@@ -1,22 +1,29 @@
 {
-  "gamingMode": false,
-  "services": [
-    { "name": "Sonarr",     "type": "windows-service", "id": "Sonarr",        "enabled": true },
-    { "name": "Radarr",     "type": "windows-service", "id": "Radarr",        "enabled": true },
-    { "name": "Lidarr",     "type": "windows-service", "id": "Lidarr",        "enabled": true },
-    { "name": "Readarr",    "type": "windows-service", "id": "Readarr",       "enabled": true },
-    { "name": "Prowlarr",   "type": "windows-service", "id": "Prowlarr",      "enabled": true },
-    { "name": "Jellyfin",   "type": "windows-service", "id": "JellyfinServer","enabled": true },
-    { "name": "qBittorrent","type": "process",         "id": "qbittorrent",   "enabled": false }
+  "gaming_mode": false,
+  "processes": [
+    { "name": "Sonarr",         "exes": ["Sonarr.exe"],                                          "enabled": true  },
+    { "name": "Radarr",         "exes": ["Radarr.exe"],                                          "enabled": true  },
+    { "name": "Prowlarr",       "exes": ["Prowlarr.exe"],                                        "enabled": true  },
+    { "name": "Jellyfin",       "exes": ["jellyfin.exe"],                                        "enabled": true  },
+    { "name": "Deluge",         "exes": ["deluged.exe", "deluge-web.exe", "deluge.exe"],         "enabled": true  },
+    { "name": "Docker Desktop", "exes": ["Docker Desktop.exe"],                                  "enabled": true  }
   ],
-  "portal": {
-    "hotlinks": [
-      { "name": "Sonarr",   "url": "http://localhost:8989", "icon": "📺" },
-      { "name": "Radarr",   "url": "http://localhost:7878", "icon": "🎬" },
-      { "name": "Lidarr",   "url": "http://localhost:8686", "icon": "🎵" },
-      { "name": "Readarr",  "url": "http://localhost:8787", "icon": "📚" },
-      { "name": "Prowlarr", "url": "http://localhost:9696", "icon": "🔍" },
-      { "name": "Jellyfin", "url": "http://localhost:8096", "icon": "🎞️" }
-    ]
-  }
+  "services": [
+    { "name": "Windows Search",              "id": "WSearch",            "enabled": true },
+    { "name": "Superfetch (SysMain)",        "id": "SysMain",            "enabled": true },
+    { "name": "Windows Update",              "id": "wuauserv",           "enabled": true },
+    { "name": "Telemetry (DiagTrack)",       "id": "DiagTrack",          "enabled": true },
+    { "name": "WAP Push (dmwappushservice)", "id": "dmwappushservice",   "enabled": true },
+    { "name": "OneDrive Sync (OneSyncSvc)", "id": "OneSyncSvc",         "enabled": true },
+    { "name": "Docker Service",              "id": "com.docker.service", "enabled": true },
+    { "name": "WSL (LxssManager)",           "id": "LxssManager",        "enabled": true }
+  ],
+  "hotlinks": [
+    { "name": "Sonarr",   "url": "http://localhost:8989", "icon": "📺" },
+    { "name": "Radarr",   "url": "http://localhost:7878", "icon": "🎬" },
+    { "name": "Lidarr",   "url": "http://localhost:8686", "icon": "🎵" },
+    { "name": "Readarr",  "url": "http://localhost:8787", "icon": "📚" },
+    { "name": "Prowlarr", "url": "http://localhost:9696", "icon": "🔍" },
+    { "name": "Jellyfin", "url": "http://localhost:8096", "icon": "🎞️" }
+  ]
 }

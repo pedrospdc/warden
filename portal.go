@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"net/url"
 	"strings"
+	"sync"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -19,14 +20,16 @@ import (
 // refreshed when the gaming mode state changes from outside the window
 // (e.g. tray icon left-click).
 type portalWindow struct {
-	win          fyne.Window
-	servicesWin  fyne.Window
-	gm           *GamingMode
-	cfg          *Config
-	statusLabel  *widget.Label
-	toggleBtn    *widget.Button
-	servicesBox  *fyne.Container
-	serviceItems []*serviceRow
+	win            fyne.Window
+	servicesWin    fyne.Window
+	gm             *GamingMode
+	cfg            *Config
+	statusLabel    *widget.Label
+	toggleBtn      *widget.Button
+	servicesBox    *fyne.Container
+	serviceItems   []*serviceRow
+	cachedServices []ServiceInfo
+	servicesMu     sync.Mutex
 }
 
 // serviceRow tracks the status dot for a single managed entry so refresh()
@@ -102,11 +105,27 @@ func (pw *portalWindow) build(a fyne.App) {
 }
 
 // showManageServicesWindow opens a dedicated window for managing services and processes.
+// The Windows services list is fetched once in the background on first open and
+// cached for all subsequent add/edit dialogs.
 func (pw *portalWindow) showManageServicesWindow(a fyne.App) {
 	if pw.servicesWin != nil {
 		pw.servicesWin.RequestFocus()
 		return
 	}
+
+	// Load the Windows services list in the background the first time only.
+	pw.servicesMu.Lock()
+	needsLoad := pw.cachedServices == nil
+	pw.servicesMu.Unlock()
+	if needsLoad {
+		go func() {
+			svcs := ListWindowsServices()
+			pw.servicesMu.Lock()
+			pw.cachedServices = svcs
+			pw.servicesMu.Unlock()
+		}()
+	}
+
 	pw.servicesBox = container.NewVBox()
 	pw.rebuildServiceList()
 
@@ -249,8 +268,8 @@ func (pw *portalWindow) makeProcRow(idx int) fyne.CanvasObject {
 // ── Dialogs ───────────────────────────────────────────────────────────────────
 
 // showServiceDialog opens an add/edit dialog for a Windows service.
-// If a live services list is available (Windows), a dropdown lets the user
-// pick a service to auto-fill the Name and Service ID fields.
+// When the cached services list is available a fuzzy-search picker (Entry +
+// List) lets the user find and auto-fill the Name and Service ID fields.
 func (pw *portalWindow) showServiceDialog(title, confirm, initName, initID string, onSave func(name, id string)) {
 	nameEntry := widget.NewEntry()
 	nameEntry.SetText(initName)
@@ -265,23 +284,42 @@ func (pw *portalWindow) showServiceDialog(title, confirm, initName, initID strin
 		widget.NewFormItem("Service ID", idEntry),
 	}
 
-	// On Windows, prepend a dropdown that auto-fills the fields.
-	if svcs := ListWindowsServices(); len(svcs) > 0 {
-		opts := make([]string, len(svcs))
-		for i, s := range svcs {
-			opts[i] = s.DisplayName + " (" + s.ID + ")"
+	pw.servicesMu.Lock()
+	svcs := pw.cachedServices
+	pw.servicesMu.Unlock()
+
+	if len(svcs) > 0 {
+		filtered := make([]ServiceInfo, len(svcs))
+		copy(filtered, svcs)
+
+		searchEntry := widget.NewEntry()
+		searchEntry.SetPlaceHolder("Search services…")
+
+		list := widget.NewList(
+			func() int { return len(filtered) },
+			func() fyne.CanvasObject { return widget.NewLabel("") },
+			func(id widget.ListItemID, obj fyne.CanvasObject) {
+				s := filtered[id]
+				obj.(*widget.Label).SetText(s.DisplayName + " (" + s.ID + ")")
+			},
+		)
+		list.OnSelected = func(id widget.ListItemID) {
+			nameEntry.SetText(filtered[id].DisplayName)
+			idEntry.SetText(filtered[id].ID)
 		}
-		sel := widget.NewSelect(opts, func(selected string) {
+
+		searchEntry.OnChanged = func(query string) {
+			filtered = filtered[:0]
 			for _, s := range svcs {
-				if s.DisplayName+" ("+s.ID+")" == selected {
-					nameEntry.SetText(s.DisplayName)
-					idEntry.SetText(s.ID)
-					break
+				if fuzzyMatch(query, s.DisplayName) || fuzzyMatch(query, s.ID) {
+					filtered = append(filtered, s)
 				}
 			}
-		})
-		sel.PlaceHolder = "Pick a service to auto-fill…"
-		items = append([]*widget.FormItem{widget.NewFormItem("Windows Services", sel)}, items...)
+			list.Refresh()
+		}
+
+		picker := container.NewBorder(searchEntry, nil, nil, nil, list)
+		items = append([]*widget.FormItem{widget.NewFormItem("Windows Services", picker)}, items...)
 	}
 
 	d := dialog.NewForm(title, confirm, "Cancel", items, func(ok bool) {
@@ -295,7 +333,7 @@ func (pw *portalWindow) showServiceDialog(title, confirm, initName, initID strin
 		}
 		onSave(name, id)
 	}, pw.servicesWin)
-	d.Resize(fyne.NewSize(460, 250))
+	d.Resize(fyne.NewSize(460, 480))
 	d.Show()
 }
 
@@ -360,6 +398,26 @@ func (pw *portalWindow) showProcessDialog(title, confirm, initName string, initE
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// fuzzyMatch returns true if every rune of pattern appears in text in order,
+// case-insensitively — the same subsequence algorithm VS Code uses.
+func fuzzyMatch(pattern, text string) bool {
+	if pattern == "" {
+		return true
+	}
+	text = strings.ToLower(text)
+	pi := 0
+	pr := []rune(strings.ToLower(pattern))
+	for _, c := range text {
+		if c == pr[pi] {
+			pi++
+			if pi == len(pr) {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 func makeDot(col color.Color) (*canvas.Circle, *fyne.Container) {
 	dot := canvas.NewCircle(col)

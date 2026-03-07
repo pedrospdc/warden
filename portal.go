@@ -225,7 +225,7 @@ func (pw *portalWindow) showAddServiceDialog() {
 		widget.NewFormItem("Name", nameEntry),
 		widget.NewFormItem("Service ID", idEntry),
 	}
-	dialog.ShowForm("Add Windows Service", "Add", "Cancel", items, func(ok bool) {
+	d := dialog.NewForm("Add Windows Service", "Add", "Cancel", items, func(ok bool) {
 		if !ok {
 			return
 		}
@@ -238,6 +238,8 @@ func (pw *portalWindow) showAddServiceDialog() {
 		_ = SaveConfig(*pw.cfg)
 		pw.rebuildServiceList()
 	}, pw.servicesWin)
+	d.Resize(fyne.NewSize(400, 180))
+	d.Show()
 }
 
 func (pw *portalWindow) showAddProcessDialog() {
@@ -250,7 +252,7 @@ func (pw *portalWindow) showAddProcessDialog() {
 		widget.NewFormItem("Name", nameEntry),
 		widget.NewFormItem("Executables", exesEntry),
 	}
-	dialog.ShowForm("Add Process", "Add", "Cancel", items, func(ok bool) {
+	d := dialog.NewForm("Add Process", "Add", "Cancel", items, func(ok bool) {
 		if !ok {
 			return
 		}
@@ -271,6 +273,8 @@ func (pw *portalWindow) showAddProcessDialog() {
 		_ = SaveConfig(*pw.cfg)
 		pw.rebuildServiceList()
 	}, pw.servicesWin)
+	d.Resize(fyne.NewSize(400, 180))
+	d.Show()
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

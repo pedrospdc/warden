@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"image/color"
 	"net/url"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
@@ -17,17 +19,19 @@ import (
 // (e.g. tray icon left-click).
 type portalWindow struct {
 	win          fyne.Window
+	servicesWin  fyne.Window
 	gm           *GamingMode
 	cfg          *Config
 	statusLabel  *widget.Label
 	toggleBtn    *widget.Button
+	servicesBox  *fyne.Container
 	serviceItems []*serviceRow
 }
 
-// serviceRow is a single row in the managed-services list.
+// serviceRow tracks the status dot for a single managed entry so refresh()
+// can update its colour without rebuilding the whole list.
 type serviceRow struct {
-	dot   *canvas.Circle
-	label *widget.Label
+	dot *canvas.Circle
 }
 
 // ShowPortal creates (or focuses) the portal window.
@@ -44,14 +48,12 @@ func ShowPortal(a fyne.App, gm *GamingMode, cfg *Config) {
 
 func (pw *portalWindow) build(a fyne.App) {
 	pw.win = a.NewWindow("Warden – Portal")
-	pw.win.Resize(fyne.NewSize(700, 560))
+	pw.win.Resize(fyne.NewSize(700, 600))
 	pw.win.SetFixedSize(false)
 
 	// ── Header ────────────────────────────────────────────────────────────────
 	title := widget.NewLabelWithStyle("🛡️  Warden", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	title.TextStyle.Bold = true
 	pw.statusLabel = widget.NewLabel("Gaming Mode: OFF")
-
 	header := container.NewBorder(nil, nil, title, pw.statusLabel)
 
 	// ── Gaming Mode Card ──────────────────────────────────────────────────────
@@ -68,36 +70,15 @@ func (pw *portalWindow) build(a fyne.App) {
 	})
 	pw.toggleBtn.Importance = widget.HighImportance
 
-	gamingCard := widget.NewCard("Gaming Mode", "", container.NewVBox(desc, pw.toggleBtn))
-
-	// ── Managed Services Card ─────────────────────────────────────────────────
-	pw.serviceItems = make([]*serviceRow, 0, len(pw.cfg.Services)+len(pw.cfg.Processes))
-
-	serviceRows := container.NewVBox()
-
-	addSection := func(heading string) {
-		lbl := widget.NewLabelWithStyle(heading, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-		serviceRows.Add(lbl)
-	}
-
-	addSection("Windows Services")
-	for _, svc := range pw.cfg.Services {
-		row := pw.makeServiceRow(svc.Name, svc.Enabled)
-		serviceRows.Add(row.container)
-	}
-
-	addSection("Processes")
-	for _, proc := range pw.cfg.Processes {
-		row := pw.makeProcRow(proc.Name, proc.Exes, proc.Enabled)
-		serviceRows.Add(row.container)
-	}
-
-	servicesCard := widget.NewCard("Managed Services", "Stopped when gaming mode is active.", container.NewScroll(serviceRows))
+	manageBtn := widget.NewButton("⚙️  Manage Services…", func() {
+		pw.showManageServicesWindow(a)
+	})
+	gamingCard := widget.NewCard("Gaming Mode", "", container.NewVBox(desc, pw.toggleBtn, manageBtn))
 
 	// ── Hotlinks Card ─────────────────────────────────────────────────────────
 	hotlinksGrid := container.NewGridWithColumns(3)
 	for _, link := range pw.cfg.Hotlinks {
-		link := link // capture loop var
+		link := link
 		btn := widget.NewButton(fmt.Sprintf("%s  %s", link.Icon, link.Name), func() {
 			parsed, err := url.Parse(link.URL)
 			if err == nil {
@@ -106,7 +87,6 @@ func (pw *portalWindow) build(a fyne.App) {
 		})
 		hotlinksGrid.Add(btn)
 	}
-
 	hotlinksCard := widget.NewCard("Quick Access", "Open your *arr apps and media services.", hotlinksGrid)
 
 	// ── Layout ────────────────────────────────────────────────────────────────
@@ -114,74 +94,194 @@ func (pw *portalWindow) build(a fyne.App) {
 		header,
 		widget.NewSeparator(),
 		gamingCard,
-		servicesCard,
 		hotlinksCard,
 	)
-
-	scroll := container.NewScroll(content)
-	pw.win.SetContent(container.NewPadded(scroll))
+	pw.win.SetContent(container.NewPadded(container.NewScroll(content)))
 	pw.win.Show()
 }
 
-// ── Row builders ──────────────────────────────────────────────────────────────
+// showManageServicesWindow opens a dedicated window for managing services and processes.
+func (pw *portalWindow) showManageServicesWindow(a fyne.App) {
+	if pw.servicesWin != nil {
+		pw.servicesWin.RequestFocus()
+		return
+	}
+	pw.servicesBox = container.NewVBox()
+	pw.rebuildServiceList()
 
-type namedRow struct {
-	container *fyne.Container
-	dot       *canvas.Circle
+	pw.servicesWin = a.NewWindow("Warden – Manage Services")
+	pw.servicesWin.Resize(fyne.NewSize(540, 600))
+	pw.servicesWin.SetContent(container.NewPadded(container.NewScroll(pw.servicesBox)))
+	pw.servicesWin.SetOnClosed(func() { pw.servicesWin = nil })
+	pw.servicesWin.Show()
 }
+
+// rebuildServiceList clears and regenerates the services/processes VBox.
+// Call this after any mutation (add, delete, toggle) to keep the list in sync.
+func (pw *portalWindow) rebuildServiceList() {
+	if pw.servicesBox == nil {
+		return
+	}
+	pw.servicesBox.Objects = nil
+	pw.serviceItems = nil
+
+	// ── Windows Services ──────────────────────────────────────────────────────
+	pw.servicesBox.Add(widget.NewLabelWithStyle("Windows Services", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
+	for i := range pw.cfg.Services {
+		pw.servicesBox.Add(pw.makeServiceRow(i))
+	}
+	addSvcBtn := widget.NewButton("+ Add Service", func() { pw.showAddServiceDialog() })
+	addSvcBtn.Importance = widget.LowImportance
+	pw.servicesBox.Add(addSvcBtn)
+
+	// ── Processes ─────────────────────────────────────────────────────────────
+	pw.servicesBox.Add(widget.NewSeparator())
+	pw.servicesBox.Add(widget.NewLabelWithStyle("Processes", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
+	for i := range pw.cfg.Processes {
+		pw.servicesBox.Add(pw.makeProcRow(i))
+	}
+	addProcBtn := widget.NewButton("+ Add Process", func() { pw.showAddProcessDialog() })
+	addProcBtn.Importance = widget.LowImportance
+	pw.servicesBox.Add(addProcBtn)
+
+	pw.servicesBox.Refresh()
+}
+
+func (pw *portalWindow) makeServiceRow(idx int) fyne.CanvasObject {
+	svc := &pw.cfg.Services[idx]
+
+	dot, dotBox := makeDot(theme.SuccessColor())
+	pw.serviceItems = append(pw.serviceItems, &serviceRow{dot: dot})
+
+	check := widget.NewCheck("", func(checked bool) {
+		pw.cfg.Services[idx].Enabled = checked
+		_ = SaveConfig(*pw.cfg)
+	})
+	check.Checked = svc.Enabled
+
+	lbl := widget.NewLabel(svc.Name)
+
+	tag := widget.NewLabel("service")
+	tag.TextStyle = fyne.TextStyle{Italic: true}
+
+	delBtn := widget.NewButton("✕", func() {
+		pw.cfg.Services = append(pw.cfg.Services[:idx], pw.cfg.Services[idx+1:]...)
+		_ = SaveConfig(*pw.cfg)
+		pw.rebuildServiceList()
+	})
+	delBtn.Importance = widget.LowImportance
+
+	return container.NewBorder(nil, nil,
+		container.NewHBox(dotBox, check),
+		container.NewHBox(tag, delBtn),
+		lbl,
+	)
+}
+
+func (pw *portalWindow) makeProcRow(idx int) fyne.CanvasObject {
+	proc := &pw.cfg.Processes[idx]
+
+	dot, dotBox := makeDot(theme.SuccessColor())
+	pw.serviceItems = append(pw.serviceItems, &serviceRow{dot: dot})
+
+	check := widget.NewCheck("", func(checked bool) {
+		pw.cfg.Processes[idx].Enabled = checked
+		_ = SaveConfig(*pw.cfg)
+	})
+	check.Checked = proc.Enabled
+
+	label := proc.Name
+	if len(proc.Exes) > 1 {
+		label = fmt.Sprintf("%s (%d exes)", proc.Name, len(proc.Exes))
+	}
+	lbl := widget.NewLabel(label)
+
+	tag := widget.NewLabel("process")
+	tag.TextStyle = fyne.TextStyle{Italic: true}
+
+	delBtn := widget.NewButton("✕", func() {
+		pw.cfg.Processes = append(pw.cfg.Processes[:idx], pw.cfg.Processes[idx+1:]...)
+		_ = SaveConfig(*pw.cfg)
+		pw.rebuildServiceList()
+	})
+	delBtn.Importance = widget.LowImportance
+
+	return container.NewBorder(nil, nil,
+		container.NewHBox(dotBox, check),
+		container.NewHBox(tag, delBtn),
+		lbl,
+	)
+}
+
+// ── Add dialogs ───────────────────────────────────────────────────────────────
+
+func (pw *portalWindow) showAddServiceDialog() {
+	nameEntry := widget.NewEntry()
+	nameEntry.SetPlaceHolder("e.g. My Service")
+	idEntry := widget.NewEntry()
+	idEntry.SetPlaceHolder("e.g. MyServiceID")
+
+	items := []*widget.FormItem{
+		widget.NewFormItem("Name", nameEntry),
+		widget.NewFormItem("Service ID", idEntry),
+	}
+	dialog.ShowForm("Add Windows Service", "Add", "Cancel", items, func(ok bool) {
+		if !ok {
+			return
+		}
+		name := strings.TrimSpace(nameEntry.Text)
+		id := strings.TrimSpace(idEntry.Text)
+		if name == "" || id == "" {
+			return
+		}
+		pw.cfg.Services = append(pw.cfg.Services, ServiceEntry{Name: name, ID: id, Enabled: true})
+		_ = SaveConfig(*pw.cfg)
+		pw.rebuildServiceList()
+	}, pw.servicesWin)
+}
+
+func (pw *portalWindow) showAddProcessDialog() {
+	nameEntry := widget.NewEntry()
+	nameEntry.SetPlaceHolder("e.g. My App")
+	exesEntry := widget.NewEntry()
+	exesEntry.SetPlaceHolder("e.g. myapp.exe, helper.exe")
+
+	items := []*widget.FormItem{
+		widget.NewFormItem("Name", nameEntry),
+		widget.NewFormItem("Executables", exesEntry),
+	}
+	dialog.ShowForm("Add Process", "Add", "Cancel", items, func(ok bool) {
+		if !ok {
+			return
+		}
+		name := strings.TrimSpace(nameEntry.Text)
+		if name == "" {
+			return
+		}
+		var exes []string
+		for _, e := range strings.Split(exesEntry.Text, ",") {
+			if e = strings.TrimSpace(e); e != "" {
+				exes = append(exes, e)
+			}
+		}
+		if len(exes) == 0 {
+			return
+		}
+		pw.cfg.Processes = append(pw.cfg.Processes, ProcessEntry{Name: name, Exes: exes, Enabled: true})
+		_ = SaveConfig(*pw.cfg)
+		pw.rebuildServiceList()
+	}, pw.servicesWin)
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 func makeDot(col color.Color) (*canvas.Circle, *fyne.Container) {
 	dot := canvas.NewCircle(col)
 	dot.Resize(fyne.NewSize(10, 10))
-	// Wrap in a fixed-size container so the circle gets proper layout space.
 	dotBox := container.NewWithoutLayout(dot)
 	dotBox.Resize(fyne.NewSize(14, 14))
 	dot.Move(fyne.NewPos(2, 2))
 	return dot, dotBox
-}
-
-func (pw *portalWindow) makeServiceRow(name string, enabled bool) namedRow {
-	dot, dotBox := makeDot(theme.SuccessColor())
-
-	lbl := widget.NewLabel(name)
-	tag := widget.NewLabel("service")
-	tag.TextStyle = fyne.TextStyle{Italic: true}
-
-	row := namedRow{
-		dot:       dot,
-		container: container.NewBorder(nil, nil, dotBox, tag, lbl),
-	}
-
-	sr := &serviceRow{dot: dot, label: lbl}
-	if !enabled {
-		sr.label.TextStyle = fyne.TextStyle{Italic: true}
-	}
-	pw.serviceItems = append(pw.serviceItems, sr)
-	return row
-}
-
-func (pw *portalWindow) makeProcRow(name string, exes []string, enabled bool) namedRow {
-	dot, dotBox := makeDot(theme.SuccessColor())
-
-	label := name
-	if len(exes) > 1 {
-		label = fmt.Sprintf("%s (%d exes)", name, len(exes))
-	}
-	lbl := widget.NewLabel(label)
-	tag := widget.NewLabel("process")
-	tag.TextStyle = fyne.TextStyle{Italic: true}
-
-	row := namedRow{
-		dot:       dot,
-		container: container.NewBorder(nil, nil, dotBox, tag, lbl),
-	}
-
-	sr := &serviceRow{dot: dot, label: lbl}
-	if !enabled {
-		sr.label.TextStyle = fyne.TextStyle{Italic: true}
-	}
-	pw.serviceItems = append(pw.serviceItems, sr)
-	return row
 }
 
 // ── State refresh ─────────────────────────────────────────────────────────────
@@ -200,7 +300,6 @@ func (pw *portalWindow) refresh() {
 	}
 	pw.toggleBtn.Refresh()
 
-	// Update dot colours for every service/process row
 	for _, sr := range pw.serviceItems {
 		if gaming {
 			sr.dot.FillColor = theme.ErrorColor()

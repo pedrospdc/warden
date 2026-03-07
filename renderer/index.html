@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+  <title>Warden – Portal</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header>
+      <div class="header-inner">
+        <div class="logo">
+          <span class="logo-shield" id="headerShield">🛡️</span>
+          <span class="logo-text">Warden</span>
+        </div>
+        <div class="gaming-badge" id="gamingBadge">
+          <span id="gamingBadgeIcon">🖥️</span>
+          <span id="gamingBadgeText">Gaming Mode OFF</span>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <!-- Gaming Mode Control -->
+      <section class="card gaming-card" id="gamingCard">
+        <h2>Gaming Mode</h2>
+        <p class="gaming-desc" id="gamingDesc">
+          Disable heavy background processes to boost gaming performance.
+        </p>
+        <div class="toggle-row">
+          <label class="toggle-switch" aria-label="Toggle Gaming Mode">
+            <input type="checkbox" id="gamingToggle" />
+            <span class="slider"></span>
+          </label>
+          <span class="toggle-label" id="toggleLabel">OFF</span>
+        </div>
+        <div id="serviceResults" class="service-results hidden"></div>
+      </section>
+
+      <!-- Services Status -->
+      <section class="card">
+        <h2>Managed Services</h2>
+        <p class="section-desc">These services are stopped when gaming mode is active.</p>
+        <ul id="serviceList" class="service-list">
+          <li class="loading">Loading services…</li>
+        </ul>
+      </section>
+
+      <!-- Portal Hotlinks -->
+      <section class="card">
+        <h2>Quick Access</h2>
+        <p class="section-desc">Open your media services in the browser.</p>
+        <div id="hotlinks" class="hotlinks-grid">
+          <div class="loading">Loading links…</div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>Warden &mdash; System Tray Gaming Optimizer</p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

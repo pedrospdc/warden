@@ -23,7 +23,7 @@ jobs:
         run: go mod download
 
       - name: Build Windows binary
-        run: go build -o warden.exe .
+        run: go build -ldflags="-H windowsgui" -o warden.exe .
 
       - name: Generate version tag
         id: version

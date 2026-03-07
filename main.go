@@ -35,16 +35,16 @@ func main() {
 	a := app.NewWithID("com.warden.app")
 	a.SetIcon(normalIcon())
 
-	// Warden lives in the system tray — there is no main window.
-	// On macOS the Dock icon is hidden automatically when there are no windows.
 	if drv, ok := a.(interface{ SetDockVisible(bool) }); ok {
 		drv.SetDockVisible(false)
 	}
 
+	// Build the portal window once; it hides on close so the tray can reopen it.
+	pw := NewPortalWindow(a, gm, &cfg)
+
 	desk, isDesktop := a.(desktop.App)
 	if !isDesktop {
-		// Fallback: open the portal directly if tray is unavailable.
-		ShowPortal(a, gm, &cfg)
+		pw.win.Show()
 		a.Run()
 		return
 	}
@@ -78,7 +78,7 @@ func main() {
 		statusItem.Disabled = true
 
 		portalItem = fyne.NewMenuItem("Open Portal…", func() {
-			ShowPortal(a, gm, &cfg)
+			pw.win.Show()
 		})
 		quitItem = fyne.NewMenuItem("Quit Warden", func() {
 			a.Quit()
@@ -97,9 +97,9 @@ func main() {
 
 	desk.SetSystemTrayIcon(normalIcon())
 	desk.SetSystemTrayMenu(buildMenu())
+	// Left-click on the tray icon shows/hides the portal window (Fyne 2.7+).
+	desk.SetSystemTrayWindow(pw.win)
 
-	// Re-register listeners so gaming mode changes triggered via the portal
-	// also update the tray icon and menu.
 	gm.OnChange(func(_ bool) {
 		updateTray(desk, gm)
 		desk.SetSystemTrayMenu(buildMenu())

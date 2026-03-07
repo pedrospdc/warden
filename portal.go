@@ -20,6 +20,7 @@ import (
 // refreshed when the gaming mode state changes from outside the window
 // (e.g. tray icon left-click).
 type portalWindow struct {
+	app            fyne.App
 	win            fyne.Window
 	servicesWin    fyne.Window
 	gm             *GamingMode
@@ -38,22 +39,25 @@ type serviceRow struct {
 	dot *canvas.Circle
 }
 
-// ShowPortal creates (or focuses) the portal window.
-func ShowPortal(a fyne.App, gm *GamingMode, cfg *Config) {
-	pw := &portalWindow{gm: gm, cfg: cfg}
-	pw.build(a)
+// NewPortalWindow creates the portal window without showing it.
+// Call pw.win.Show() to display it.
+func NewPortalWindow(a fyne.App, gm *GamingMode, cfg *Config) *portalWindow {
+	pw := &portalWindow{app: a, gm: gm, cfg: cfg}
+	pw.build()
 	pw.refresh()
 
-	// Re-render whenever gaming mode changes (from tray or another portal).
 	gm.OnChange(func(_ bool) {
 		pw.refresh()
 	})
+	return pw
 }
 
-func (pw *portalWindow) build(a fyne.App) {
-	pw.win = a.NewWindow("Warden – Portal")
+func (pw *portalWindow) build() {
+	pw.win = pw.app.NewWindow("Warden – Portal")
 	pw.win.Resize(fyne.NewSize(700, 600))
 	pw.win.SetFixedSize(false)
+	// Hide instead of close so the tray can bring it back.
+	pw.win.SetCloseIntercept(func() { pw.win.Hide() })
 
 	// ── Header ────────────────────────────────────────────────────────────────
 	title := widget.NewLabelWithStyle("🛡️  Warden", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
@@ -75,7 +79,7 @@ func (pw *portalWindow) build(a fyne.App) {
 	pw.toggleBtn.Importance = widget.HighImportance
 
 	manageBtn := widget.NewButton("⚙️  Manage Services…", func() {
-		pw.showManageServicesWindow(a)
+		pw.showManageServicesWindow()
 	})
 	gamingCard := widget.NewCard("Gaming Mode", "", container.NewVBox(desc, pw.toggleBtn, manageBtn))
 
@@ -86,7 +90,7 @@ func (pw *portalWindow) build(a fyne.App) {
 		btn := widget.NewButton(fmt.Sprintf("%s  %s", link.Icon, link.Name), func() {
 			parsed, err := url.Parse(link.URL)
 			if err == nil {
-				a.OpenURL(parsed)
+				pw.app.OpenURL(parsed)
 			}
 		})
 		hotlinksGrid.Add(btn)
@@ -101,13 +105,12 @@ func (pw *portalWindow) build(a fyne.App) {
 		hotlinksCard,
 	)
 	pw.win.SetContent(container.NewPadded(container.NewScroll(content)))
-	pw.win.Show()
 }
 
 // showManageServicesWindow opens a dedicated window for managing services and processes.
 // The Windows services list is fetched once in the background on first open and
 // cached for all subsequent add/edit dialogs.
-func (pw *portalWindow) showManageServicesWindow(a fyne.App) {
+func (pw *portalWindow) showManageServicesWindow() {
 	if pw.servicesWin != nil {
 		pw.servicesWin.RequestFocus()
 		return
@@ -129,7 +132,7 @@ func (pw *portalWindow) showManageServicesWindow(a fyne.App) {
 	pw.servicesBox = container.NewVBox()
 	pw.rebuildServiceList()
 
-	pw.servicesWin = a.NewWindow("Warden – Manage Services")
+	pw.servicesWin = pw.app.NewWindow("Warden – Manage Services")
 	pw.servicesWin.Resize(fyne.NewSize(540, 600))
 	pw.servicesWin.SetContent(container.NewPadded(container.NewScroll(pw.servicesBox)))
 	pw.servicesWin.SetOnClosed(func() { pw.servicesWin = nil })
@@ -267,9 +270,9 @@ func (pw *portalWindow) makeProcRow(idx int) fyne.CanvasObject {
 
 // ── Dialogs ───────────────────────────────────────────────────────────────────
 
-// showServiceDialog opens an add/edit dialog for a Windows service.
+// showServiceDialog opens a full window for adding/editing a Windows service.
 // When the cached services list is available a fuzzy-search picker (Entry +
-// List) lets the user find and auto-fill the Name and Service ID fields.
+// List) occupies the top portion, filling all available space.
 func (pw *portalWindow) showServiceDialog(title, confirm, initName, initID string, onSave func(name, id string)) {
 	nameEntry := widget.NewEntry()
 	nameEntry.SetText(initName)
@@ -279,14 +282,33 @@ func (pw *portalWindow) showServiceDialog(title, confirm, initName, initID strin
 	idEntry.SetText(initID)
 	idEntry.SetPlaceHolder("e.g. MyServiceID")
 
-	items := []*widget.FormItem{
-		widget.NewFormItem("Name", nameEntry),
-		widget.NewFormItem("Service ID", idEntry),
-	}
+	cancelBtn := widget.NewButton("Cancel", nil)
+	saveBtn := widget.NewButton(confirm, nil)
+	saveBtn.Importance = widget.HighImportance
 
 	pw.servicesMu.Lock()
 	svcs := pw.cachedServices
 	pw.servicesMu.Unlock()
+
+	win := pw.app.NewWindow(title)
+
+	cancelBtn.OnTapped = func() { win.Close() }
+	saveBtn.OnTapped = func() {
+		name := strings.TrimSpace(nameEntry.Text)
+		id := strings.TrimSpace(idEntry.Text)
+		if name == "" || id == "" {
+			return
+		}
+		onSave(name, id)
+		win.Close()
+	}
+
+	form := widget.NewForm(
+		widget.NewFormItem("Name", nameEntry),
+		widget.NewFormItem("Service ID", idEntry),
+	)
+	buttons := container.NewGridWithColumns(2, cancelBtn, saveBtn)
+	bottom := container.NewVBox(widget.NewSeparator(), form, buttons)
 
 	if len(svcs) > 0 {
 		filtered := make([]ServiceInfo, len(svcs))
@@ -307,7 +329,6 @@ func (pw *portalWindow) showServiceDialog(title, confirm, initName, initID strin
 			nameEntry.SetText(filtered[id].DisplayName)
 			idEntry.SetText(filtered[id].ID)
 		}
-
 		searchEntry.OnChanged = func(query string) {
 			filtered = filtered[:0]
 			for _, s := range svcs {
@@ -318,23 +339,15 @@ func (pw *portalWindow) showServiceDialog(title, confirm, initName, initID strin
 			list.Refresh()
 		}
 
-		picker := container.NewBorder(searchEntry, nil, nil, nil, list)
-		items = append([]*widget.FormItem{widget.NewFormItem("Windows Services", picker)}, items...)
+		win.Resize(fyne.NewSize(500, 540))
+		win.SetContent(container.NewPadded(
+			container.NewBorder(searchEntry, bottom, nil, nil, list),
+		))
+	} else {
+		win.Resize(fyne.NewSize(420, 220))
+		win.SetContent(container.NewPadded(container.NewVBox(form, buttons)))
 	}
-
-	d := dialog.NewForm(title, confirm, "Cancel", items, func(ok bool) {
-		if !ok {
-			return
-		}
-		name := strings.TrimSpace(nameEntry.Text)
-		id := strings.TrimSpace(idEntry.Text)
-		if name == "" || id == "" {
-			return
-		}
-		onSave(name, id)
-	}, pw.servicesWin)
-	d.Resize(fyne.NewSize(460, 480))
-	d.Show()
+	win.Show()
 }
 
 // showProcessDialog opens an add/edit dialog for a process entry.

@@ -10,6 +10,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
@@ -117,7 +118,7 @@ func (pw *portalWindow) showManageServicesWindow(a fyne.App) {
 }
 
 // rebuildServiceList clears and regenerates the services/processes VBox.
-// Call this after any mutation (add, delete, toggle) to keep the list in sync.
+// Call this after any mutation (add, delete, toggle, edit) to keep the list in sync.
 func (pw *portalWindow) rebuildServiceList() {
 	if pw.servicesBox == nil {
 		return
@@ -130,7 +131,13 @@ func (pw *portalWindow) rebuildServiceList() {
 	for i := range pw.cfg.Services {
 		pw.servicesBox.Add(pw.makeServiceRow(i))
 	}
-	addSvcBtn := widget.NewButton("+ Add Service", func() { pw.showAddServiceDialog() })
+	addSvcBtn := widget.NewButton("+ Add Service", func() {
+		pw.showServiceDialog("Add Windows Service", "Add", "", "", func(name, id string) {
+			pw.cfg.Services = append(pw.cfg.Services, ServiceEntry{Name: name, ID: id, Enabled: true})
+			_ = SaveConfig(*pw.cfg)
+			pw.rebuildServiceList()
+		})
+	})
 	addSvcBtn.Importance = widget.LowImportance
 	pw.servicesBox.Add(addSvcBtn)
 
@@ -140,7 +147,13 @@ func (pw *portalWindow) rebuildServiceList() {
 	for i := range pw.cfg.Processes {
 		pw.servicesBox.Add(pw.makeProcRow(i))
 	}
-	addProcBtn := widget.NewButton("+ Add Process", func() { pw.showAddProcessDialog() })
+	addProcBtn := widget.NewButton("+ Add Process", func() {
+		pw.showProcessDialog("Add Process", "Add", "", nil, func(name string, exes []string) {
+			pw.cfg.Processes = append(pw.cfg.Processes, ProcessEntry{Name: name, Exes: exes, Enabled: true})
+			_ = SaveConfig(*pw.cfg)
+			pw.rebuildServiceList()
+		})
+	})
 	addProcBtn.Importance = widget.LowImportance
 	pw.servicesBox.Add(addProcBtn)
 
@@ -164,6 +177,16 @@ func (pw *portalWindow) makeServiceRow(idx int) fyne.CanvasObject {
 	tag := widget.NewLabel("service")
 	tag.TextStyle = fyne.TextStyle{Italic: true}
 
+	editBtn := widget.NewButton("✎", func() {
+		pw.showServiceDialog("Edit Windows Service", "Save", pw.cfg.Services[idx].Name, pw.cfg.Services[idx].ID, func(name, id string) {
+			pw.cfg.Services[idx].Name = name
+			pw.cfg.Services[idx].ID = id
+			_ = SaveConfig(*pw.cfg)
+			pw.rebuildServiceList()
+		})
+	})
+	editBtn.Importance = widget.LowImportance
+
 	delBtn := widget.NewButton("✕", func() {
 		pw.cfg.Services = append(pw.cfg.Services[:idx], pw.cfg.Services[idx+1:]...)
 		_ = SaveConfig(*pw.cfg)
@@ -173,7 +196,7 @@ func (pw *portalWindow) makeServiceRow(idx int) fyne.CanvasObject {
 
 	return container.NewBorder(nil, nil,
 		container.NewHBox(dotBox, check),
-		container.NewHBox(tag, delBtn),
+		container.NewHBox(tag, editBtn, delBtn),
 		lbl,
 	)
 }
@@ -199,6 +222,16 @@ func (pw *portalWindow) makeProcRow(idx int) fyne.CanvasObject {
 	tag := widget.NewLabel("process")
 	tag.TextStyle = fyne.TextStyle{Italic: true}
 
+	editBtn := widget.NewButton("✎", func() {
+		pw.showProcessDialog("Edit Process", "Save", pw.cfg.Processes[idx].Name, pw.cfg.Processes[idx].Exes, func(name string, exes []string) {
+			pw.cfg.Processes[idx].Name = name
+			pw.cfg.Processes[idx].Exes = exes
+			_ = SaveConfig(*pw.cfg)
+			pw.rebuildServiceList()
+		})
+	})
+	editBtn.Importance = widget.LowImportance
+
 	delBtn := widget.NewButton("✕", func() {
 		pw.cfg.Processes = append(pw.cfg.Processes[:idx], pw.cfg.Processes[idx+1:]...)
 		_ = SaveConfig(*pw.cfg)
@@ -208,24 +241,50 @@ func (pw *portalWindow) makeProcRow(idx int) fyne.CanvasObject {
 
 	return container.NewBorder(nil, nil,
 		container.NewHBox(dotBox, check),
-		container.NewHBox(tag, delBtn),
+		container.NewHBox(tag, editBtn, delBtn),
 		lbl,
 	)
 }
 
-// ── Add dialogs ───────────────────────────────────────────────────────────────
+// ── Dialogs ───────────────────────────────────────────────────────────────────
 
-func (pw *portalWindow) showAddServiceDialog() {
+// showServiceDialog opens an add/edit dialog for a Windows service.
+// If a live services list is available (Windows), a dropdown lets the user
+// pick a service to auto-fill the Name and Service ID fields.
+func (pw *portalWindow) showServiceDialog(title, confirm, initName, initID string, onSave func(name, id string)) {
 	nameEntry := widget.NewEntry()
+	nameEntry.SetText(initName)
 	nameEntry.SetPlaceHolder("e.g. My Service")
+
 	idEntry := widget.NewEntry()
+	idEntry.SetText(initID)
 	idEntry.SetPlaceHolder("e.g. MyServiceID")
 
 	items := []*widget.FormItem{
 		widget.NewFormItem("Name", nameEntry),
 		widget.NewFormItem("Service ID", idEntry),
 	}
-	d := dialog.NewForm("Add Windows Service", "Add", "Cancel", items, func(ok bool) {
+
+	// On Windows, prepend a dropdown that auto-fills the fields.
+	if svcs := ListWindowsServices(); len(svcs) > 0 {
+		opts := make([]string, len(svcs))
+		for i, s := range svcs {
+			opts[i] = s.DisplayName + " (" + s.ID + ")"
+		}
+		sel := widget.NewSelect(opts, func(selected string) {
+			for _, s := range svcs {
+				if s.DisplayName+" ("+s.ID+")" == selected {
+					nameEntry.SetText(s.DisplayName)
+					idEntry.SetText(s.ID)
+					break
+				}
+			}
+		})
+		sel.PlaceHolder = "Pick a service to auto-fill…"
+		items = append([]*widget.FormItem{widget.NewFormItem("Windows Services", sel)}, items...)
+	}
+
+	d := dialog.NewForm(title, confirm, "Cancel", items, func(ok bool) {
 		if !ok {
 			return
 		}
@@ -234,25 +293,50 @@ func (pw *portalWindow) showAddServiceDialog() {
 		if name == "" || id == "" {
 			return
 		}
-		pw.cfg.Services = append(pw.cfg.Services, ServiceEntry{Name: name, ID: id, Enabled: true})
-		_ = SaveConfig(*pw.cfg)
-		pw.rebuildServiceList()
+		onSave(name, id)
 	}, pw.servicesWin)
-	d.Resize(fyne.NewSize(400, 180))
+	d.Resize(fyne.NewSize(460, 250))
 	d.Show()
 }
 
-func (pw *portalWindow) showAddProcessDialog() {
+// showProcessDialog opens an add/edit dialog for a process entry.
+// A Browse button lets the user navigate to an .exe via a file picker;
+// the selected filename is appended to the executables field.
+func (pw *portalWindow) showProcessDialog(title, confirm, initName string, initExes []string, onSave func(name string, exes []string)) {
 	nameEntry := widget.NewEntry()
+	nameEntry.SetText(initName)
 	nameEntry.SetPlaceHolder("e.g. My App")
+
 	exesEntry := widget.NewEntry()
+	exesEntry.SetText(strings.Join(initExes, ", "))
 	exesEntry.SetPlaceHolder("e.g. myapp.exe, helper.exe")
+
+	browseBtn := widget.NewButton("Browse…", func() {
+		fd := dialog.NewFileOpen(func(r fyne.URIReadCloser, err error) {
+			if err != nil || r == nil {
+				return
+			}
+			defer r.Close()
+			filename := r.URI().Name()
+			current := strings.TrimSpace(exesEntry.Text)
+			if current == "" {
+				exesEntry.SetText(filename)
+			} else {
+				exesEntry.SetText(current + ", " + filename)
+			}
+		}, pw.servicesWin)
+		fd.SetFilter(storage.NewExtensionFileFilter([]string{".exe"}))
+		fd.Show()
+	})
+
+	exesRow := container.NewBorder(nil, nil, nil, browseBtn, exesEntry)
 
 	items := []*widget.FormItem{
 		widget.NewFormItem("Name", nameEntry),
-		widget.NewFormItem("Executables", exesEntry),
+		widget.NewFormItem("Executables", exesRow),
 	}
-	d := dialog.NewForm("Add Process", "Add", "Cancel", items, func(ok bool) {
+
+	d := dialog.NewForm(title, confirm, "Cancel", items, func(ok bool) {
 		if !ok {
 			return
 		}
@@ -269,11 +353,9 @@ func (pw *portalWindow) showAddProcessDialog() {
 		if len(exes) == 0 {
 			return
 		}
-		pw.cfg.Processes = append(pw.cfg.Processes, ProcessEntry{Name: name, Exes: exes, Enabled: true})
-		_ = SaveConfig(*pw.cfg)
-		pw.rebuildServiceList()
+		onSave(name, exes)
 	}, pw.servicesWin)
-	d.Resize(fyne.NewSize(400, 180))
+	d.Resize(fyne.NewSize(460, 210))
 	d.Show()
 }
 

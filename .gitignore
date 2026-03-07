@@ -1,0 +1,17 @@
+# Go build artifacts
+warden
+*.exe
+*.test
+
+# Dependencies
+vendor/
+
+# IDE
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db

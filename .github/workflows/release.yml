@@ -19,14 +19,30 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Cache wixl binary
+        id: cache-wixl
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/wixl
+          key: wixl-0.101-ubuntu-22.04
+
       - name: Install build dependencies
         run: |
-          sudo apt-get install -y gcc-mingw-w64-x86-64 libgcab-1.0-0 libgsf-1-114
-          # Ubuntu 22.04's msitools repack omits wixl; extract it from the focal package
-          curl -fsSL http://archive.ubuntu.com/ubuntu/pool/universe/m/msitools/msitools_0.100-1_amd64.deb \
-            -o /tmp/msitools-focal.deb
-          dpkg-deb -x /tmp/msitools-focal.deb /tmp/msitools-focal
-          sudo install -m 755 /tmp/msitools-focal/usr/bin/wixl /usr/local/bin/wixl
+          sudo apt-get install -y gcc-mingw-w64-x86-64
+          if [ "${{ steps.cache-wixl.outputs.cache-hit }}" != "true" ]; then
+            sudo apt-get install -y \
+              libglib2.0-dev libgsf-1-dev libgcab-dev \
+              valac meson ninja-build pkg-config
+            # Ubuntu 22.04's msitools repack omits wixl; build from upstream source
+            curl -fsSL https://download.gnome.org/sources/msitools/0.101/msitools-0.101.tar.xz \
+              | tar -xJ -C /tmp
+            cd /tmp/msitools-0.101
+            meson setup _build --buildtype=release
+            ninja -C _build
+            mkdir -p /home/runner/.cache/wixl
+            cp "$(find _build -name wixl -type f | head -1)" /home/runner/.cache/wixl/wixl
+          fi
+          sudo install -m 755 /home/runner/.cache/wixl/wixl /usr/local/bin/wixl
 
       - name: Download modules
         run: go mod download

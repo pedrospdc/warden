@@ -21,7 +21,7 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          sudo apt-get install -y gcc-mingw-w64-x86-64 libgcab1 libgsf-1-114
+          sudo apt-get install -y gcc-mingw-w64-x86-64 libgcab-1.0-0 libgsf-1-114
           # Ubuntu 22.04's msitools repack omits wixl; extract it from the focal package
           curl -fsSL http://archive.ubuntu.com/ubuntu/pool/universe/m/msitools/msitools_0.100-1_amd64.deb \
             -o /tmp/msitools-focal.deb

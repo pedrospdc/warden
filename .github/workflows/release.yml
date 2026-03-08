@@ -32,6 +32,7 @@ jobs:
           if [ "${{ steps.cache-wixl.outputs.cache-hit }}" != "true" ]; then
             sudo apt-get install -y \
               libglib2.0-dev libgsf-1-dev libgcab-dev \
+              libgirepository1.0-dev libxml2-dev \
               valac meson ninja-build pkg-config
             # Ubuntu 22.04's msitools repack omits wixl; build from upstream source
             curl -fsSL https://download.gnome.org/sources/msitools/0.101/msitools-0.101.tar.xz \

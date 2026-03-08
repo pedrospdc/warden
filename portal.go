@@ -188,11 +188,12 @@ func (pw *portalWindow) makeServiceRow(idx int) fyne.CanvasObject {
 	dot, dotBox := makeDot(theme.SuccessColor())
 	pw.serviceItems = append(pw.serviceItems, &serviceRow{dot: dot})
 
-	check := widget.NewCheck("", func(checked bool) {
+	check := widget.NewCheck("", nil)
+	check.SetChecked(svc.Enabled)
+	check.OnChanged = func(checked bool) {
 		pw.cfg.Services[idx].Enabled = checked
 		_ = SaveConfig(*pw.cfg)
-	})
-	check.Checked = svc.Enabled
+	}
 
 	lbl := widget.NewLabel(svc.Name)
 
@@ -229,11 +230,12 @@ func (pw *portalWindow) makeProcRow(idx int) fyne.CanvasObject {
 	dot, dotBox := makeDot(theme.SuccessColor())
 	pw.serviceItems = append(pw.serviceItems, &serviceRow{dot: dot})
 
-	check := widget.NewCheck("", func(checked bool) {
+	check := widget.NewCheck("", nil)
+	check.SetChecked(proc.Enabled)
+	check.OnChanged = func(checked bool) {
 		pw.cfg.Processes[idx].Enabled = checked
 		_ = SaveConfig(*pw.cfg)
-	})
-	check.Checked = proc.Enabled
+	}
 
 	label := proc.Name
 	if len(proc.Exes) > 1 {

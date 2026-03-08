@@ -8,7 +8,7 @@ on:
 jobs:
   release:
     name: Build and Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions:
       contents: write
     steps:
@@ -20,9 +20,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install build dependencies
-        run: |
-          sudo apt-get install -y gcc-mingw-w64-x86-64 msitools
-          ls /usr/bin/wixl || (find / -name wixl 2>/dev/null | head -5 && exit 1)
+        run: sudo apt-get install -y gcc-mingw-w64-x86-64 msitools
 
       - name: Download modules
         run: go mod download

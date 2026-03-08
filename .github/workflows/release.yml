@@ -44,6 +44,9 @@ jobs:
             cp "$(find _build -name wixl -type f | head -1)" /home/runner/.cache/wixl/wixl
           fi
           sudo install -m 755 /home/runner/.cache/wixl/wixl /usr/local/bin/wixl
+          file /usr/local/bin/wixl
+          ldd /usr/local/bin/wixl || true
+          wixl --version
 
       - name: Download modules
         run: go mod download
